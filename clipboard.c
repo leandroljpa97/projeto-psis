@@ -59,6 +59,7 @@ int main(int argc, char *argv[]){
 		exit(EXIT_FAILURE);
 	}
 
+
 	// If the clipboard run in connected mode
 	if (argc==4)
 	{

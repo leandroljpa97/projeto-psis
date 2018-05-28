@@ -120,6 +120,12 @@ void initialize_clipboard()
 	sock_main_server = -1;
 
 	signal(SIGINT, ctrl_c_callback_handler);
+	void (*old_handler)(int);
+	if((old_handler=signal(SIGPIPE,SIG_IGN))==SIG_ERR)
+	{
+		perror("Could not handle SIGPIPE");
+		exit(0);
+	}
 
 	//Initialize mutex!
     if(pthread_mutex_init(&mux, NULL) != 0)
@@ -372,12 +378,14 @@ int paste(_message message, int user_fd)
 
 	if(write(user_fd, &message, sizeof(_message)) != sizeof(_message))
 	{
-		printf("Error in buf alocation \n");
+		printf("o write vai retornar -1 sigpipe!! \n");
 		return(-1);
     }
 
 	if(write(user_fd, buf, message.length) != message.length)
 	{
+		printf("o write vai retornar -1 sigpipe OUTRA VEZ!! \n");
+
 		perror("Error in paste\n");
        	return (-1);
    	}
@@ -414,15 +422,21 @@ int wait(_message message, int user_fd)
 	
 	pthread_mutex_unlock(&mutex_wait[message.region]);
 
+
+	waiting_list[message.region] = waiting_list[message.region] - 1;
+
+	//nao tenho a certeza disto lol
+	if(waiting_list[message.region]==0)
+	flag_wait[message.region] = 0;
+
 	if(paste(message, user_fd) == -1)
 	{
 		printf("Error in paste of the wait\n");
 		return (-1);
 	}
 
-	waiting_list[message.region] = waiting_list[message.region] - 1;
-	flag_wait[message.region] = 0;
-	
+
+
 	return 0;
 }
 
