@@ -186,6 +186,8 @@ int unix_connection()
 	int err = bind(CLIPBOARD_SOCKET, (struct sockaddr *) &local_addr, sizeof(struct sockaddr_un));
 	if(err == -1) 
 	{
+		printf("CHEGUEI AQUI\n");
+
 		perror("Bind:");
 		exit(EXIT_FAILURE);
 	}
@@ -268,9 +270,9 @@ Description:
 
 int copy(_message message, int user_fd)
 {
-	char * data;
+	void * data;
 
-    data = (char*) malloc(message.length);
+    data = malloc(message.length);
     if(data == NULL)
     {
         printf("Alocation error\n");
@@ -344,7 +346,7 @@ Description:
 
 int paste(_message message, int user_fd)
 {
-	char * buf = NULL;
+	void * buf = NULL;
 
 	pthread_rwlock_rdlock(&rwlock[message.region]);
 	if(clipboard.matrix[message.region] != NULL )
@@ -418,7 +420,7 @@ int wait(_message message, int user_fd)
 		return (-1);
 	}
 
-	waiting_list[message.region]=waiting_list[message.region] - 1;
+	waiting_list[message.region] = waiting_list[message.region] - 1;
 	flag_wait[message.region] = 0;
 	
 	return 0;
@@ -500,13 +502,14 @@ void generate_random_port_and_bind(int _sock_fd)
         server_addr.sin_port = htons(port);
 
         if(counter > 50 ) {
-            perror("Bind:");
+            perror("Bind");
             exit(EXIT_FAILURE);
         }
         
         err = bind(_sock_fd, (struct sockaddr* ) &server_addr, sizeof(struct sockaddr_in));
 
         counter += 1;
+        printf("O counter chegou a %d\n", counter);
     }
     
     printf("The port to connect with me is %d\n", port);
@@ -555,7 +558,7 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
 {
     int socket_fd_son= *((int*)_socket_fd_son);
     _message message;
-    char * buffer_aux=NULL;
+    void * buffer_aux=NULL;
     int j;
     //---------------initialize my son------------------------
 	//nao preciso de meter aqui agora um readlock????
@@ -566,9 +569,8 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
 
     for(j=0; j<10; j++)
     {
-        sleep(2);
+        //sleep(1);
         printf("região %d \n",j);
-        //atencao isto de baixo é para sair pah o sizeof char e tal
         message.length=clipboard.size[j];
         printf("A região %d tem size de %lu \n", j, clipboard.size[j]);
         message.region=j;
@@ -610,18 +612,18 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
         {
             free(buffer_aux);
         }
-        buffer_aux= malloc(message.length*sizeof(char));
+        buffer_aux= malloc(message.length);
         if(buffer_aux==NULL)
         {
             printf("mal inicializado \n");
             exit(-1);
         }
-        read(socket_fd_son, buffer_aux,message.length*sizeof(char));
+        read(socket_fd_son, buffer_aux,message.length);
         if(sock_main_server!=-1)
         {
             pthread_mutex_lock(&mux);
             write(sock_main_server,&message,sizeof(_message));
-            write(sock_main_server,buffer_aux,message.length*sizeof(char));
+            write(sock_main_server,buffer_aux,message.length);
             pthread_mutex_unlock(&mux);
 
         }
@@ -630,7 +632,7 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
         {
             pthread_mutex_lock(&mux);
             write(pipefd[WRITE],&message,sizeof(_message));
-            write(pipefd[WRITE],buffer_aux,message.length*sizeof(char));
+            write(pipefd[WRITE],buffer_aux,message.length);
             pthread_mutex_unlock(&mux);
 
         }
@@ -727,7 +729,7 @@ void * initialize_receiveUP_sendDOWN()
         	printf("SOU O FILHO E VOU RECEBER UMA ATUALIZAÃO\n");
 
             printf("Vou atualizar a região %d\n", j);
-            clipboard.matrix[j] = (char *) malloc(message_aux.length*sizeof(char));
+            clipboard.matrix[j] = malloc(message_aux.length);
 
             if((clipboard.matrix[j] == NULL) || (clipboard_paste(sock_main_server, message_aux.region, clipboard.matrix[j], clipboard.size[j]) == 0))
             {
@@ -753,18 +755,18 @@ void * receiveUP_sendDOWN(void * _fd)
 {
     int fd = *((int *) _fd);
     _message message_aux;
-    char * buffer = NULL;
+    void * buffer = NULL;
     _clipboards_list * aux;
 
 
-    while(read(fd, &message_aux, sizeof(_message)) >0)
+    while(read(fd, &message_aux, sizeof(_message)) > 0)
     {
         printf("recebi do pipe ou do socket normal \n");
         //MAIS UMA VEZ ISTO É A FUNCAO DE COPY - A NOSSA 'NOVA ' FUNCAO (QUE NAO EXISTE)
         //isto é que é o 'novo' copy- criar uma funcao para isto maybe! quando o pai escreve po filho
 
-        buffer=malloc(sizeof(char)*message_aux.length);
-        if(read(fd, buffer, message_aux.length*sizeof(char))!=message_aux.length*sizeof(char))
+        buffer= malloc(message_aux.length);
+        if(read(fd, buffer, message_aux.length)!=message_aux.length)
         {
         	printf("merdaaa \n");
         	return 0;
@@ -777,7 +779,7 @@ void * receiveUP_sendDOWN(void * _fd)
         	free(clipboard.matrix[message_aux.region]);
 
         clipboard.size[message_aux.region]=message_aux.length;
-        printf("recebi o buffer do pipe ou do outro : %s \n",buffer);
+        printf("recebi o buffer do pipe ou do outro : %s \n", (char *)buffer);
 
         clipboard.matrix[message_aux.region] = buffer;
         printf("o clipboard correspondente é :%s da posicao : %d \n",clipboard.matrix[message_aux.region],message_aux.region);
@@ -802,7 +804,7 @@ void * receiveUP_sendDOWN(void * _fd)
         {
             printf("tou a mandar o copy para os meus filhos \n");
             write(aux->sock_fd, &message_aux, sizeof(_message));
-            write(aux->sock_fd, buffer, message_aux.length*sizeof(char));
+            write(aux->sock_fd, buffer, message_aux.length);
             aux=aux->next;
         }
         pthread_rwlock_unlock(&rw_child);

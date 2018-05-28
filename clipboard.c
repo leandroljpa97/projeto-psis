@@ -72,7 +72,6 @@ int main(int argc, char *argv[]){
         pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &pipefd[READ]);
     }
 
-
 	pthread_create(&thread_id[1], NULL, accept_remote_connections, 0);
 
 	int CLIPBOARD_SOCKET = unix_connection();
