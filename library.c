@@ -54,6 +54,13 @@ int clipboard_connect(char * clipboard_dir)
 		return(-1);
 	}
 
+	void (*close_socket)(int);
+	if((close_socket=signal(SIGPIPE,SIG_IGN))==SIG_ERR)
+	{
+		perror("Could not handle SIGPIPE or CTRL_Chandle");
+		exit(0);
+	}
+
 	server_addr.sun_family = AF_UNIX;
 	strcpy(server_addr.sun_path, SOCK_ADDRESS);
 
