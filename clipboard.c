@@ -19,6 +19,7 @@ COMMENTS
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -28,6 +29,7 @@ COMMENTS
 #include <pthread.h>
 
 #include "clipboard_library.h"
+
 
 /**********************************************************************
 
@@ -65,8 +67,8 @@ int main(int argc, char *argv[]){
 	{
 		strcpy(adress,argv[2]);
 		sock_main_server = inet_connection_client(adress , atoi(argv[3]));
-        
-        pthread_create(&thread_id[0], NULL, initialize_receiveUP_sendDOWN, 0);
+
+        pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &sock_main_server);
     }
     else
     {
