@@ -7,7 +7,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include "utils.h"
+#define MAX_INPUT 1000000
 
 int main(int argc, char const *argv[]) {
 
@@ -76,7 +76,7 @@ int main(int argc, char const *argv[]) {
 
 			printf("value of many: %d\n", many);
 			
-			char *recv_buf = (char*)mymalloc(sizeof(char)*many);
+			char *recv_buf = (char*)malloc(sizeof(char)*many);
 
 			memset(recv_buf, '\0', many);
 
@@ -101,7 +101,7 @@ int main(int argc, char const *argv[]) {
 			fgets(message,MAX_INPUT,stdin);
 			sscanf(message, "%d", &many);
 			
-			char *recv_buf = (char*)mymalloc(sizeof(char)*many);
+			char *recv_buf = (char*)malloc(sizeof(char)*many);
 
 			if(clipboard_wait(clipboard_id, region, recv_buf, (size_t)many) == 0) {
 				free(recv_buf);

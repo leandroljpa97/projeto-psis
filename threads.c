@@ -104,10 +104,6 @@ void * new_thread_clipboard(void * _user_fd)
 	return 0;
 }
 
-
-
-
-
 /**********************************************************************
 
 accept_remote_connections()
@@ -171,7 +167,7 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
 
     for(j=0; j<10; j++)
     {
-        sleep(2);
+        //sleep(2);
         printf("região %d \n",j);
         message.length=clipboard.size[j];
         printf("A região %d tem size de %lu \n", j, clipboard.size[j]);
@@ -191,11 +187,9 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
 
             paste(message, socket_fd_son);
        	}
-
     }
+
     pthread_mutex_unlock(&mutex_child);
-
-
 
     printf("O sock_fd_son é %d\n", socket_fd_son);
  
@@ -232,9 +226,6 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
             pthread_mutex_unlock(&mux);
 
         }
-
-
-
     }
 
     _clipboards_list * aux1= clipboards_list;
@@ -284,18 +275,13 @@ void * receiveUP_sendDOWN(void * _fd)
 
         //nao sei o que é suposto retornar ou nao pah...
         //se ele vier aqui é pq houve merda a copiar no read!! sinal que nao leu o read no copy
-        if(!copy_to_clipboard(fd,message_aux))
-            return 0;
+        if(!copy_to_clipboard(fd, message_aux))
+        	break;
+            //return 0;
 
 		pthread_mutex_lock(&mutex_wait[message_aux.region]);
 
-		if(waiting_list[message_aux.region]>0)
-		{
-			flag_wait[message_aux.region]=1;
-			//for(int j=0; j<waiting_list[message_aux.region];j++)
-			//pthread_cond_signal(&data_cond[message_aux.region]);
-			pthread_cond_broadcast(&data_cond[message_aux.region]);
-		}
+		pthread_cond_broadcast(&data_cond[message_aux.region]);
 
 		printf("eu vou bazaar do mutex 1 \n");
 		pthread_mutex_unlock(&mutex_wait[message_aux.region]);
@@ -304,26 +290,25 @@ void * receiveUP_sendDOWN(void * _fd)
 		aux = clipboards_list;
 
 		pthread_mutex_lock(&mutex_child);
-        while(aux!=NULL)
+        while(aux != NULL)
         {
             printf("tou a mandar o copy para os meus filhos \n");
             write(aux->sock_fd, &message_aux, sizeof(_message));
             write(aux->sock_fd, clipboard.matrix[message_aux.region], message_aux.length);
-            aux=aux->next;
+            aux = aux->next;
         }
         pthread_mutex_unlock(&mutex_child);
 
         for(int i = 0; i < 10; i++)
 		{
-			printf("Conteudo da região %d é %s\n", i, clipboard.matrix[i]);
+			printf("Conteudo da região %d é %s\n", i, (char *) clipboard.matrix[i]);
 		}
     }
 
     //only arrives here when dad dies
 
-    sock_main_server=-1;
+    sock_main_server = -1;
     receiveUP_sendDOWN(pipefd);
 
-    		return 0;
-
+   	return 0;
 }

@@ -47,17 +47,35 @@ Description:
 
 void ctrl_c_callback_handler(int signum)
 {
+	/*
     int i;
 
     printf("Caught signal Ctr-C\n");
 
-    for(i = 0; i < 10; i++)
+    _clipboards_list * aux = clipboards_list;
+    _clipboards_list * aux2 = clipboards_list;
+
+    while(aux != NULL)
     {
-        printf("Conteudo da região %d é %s\n", i, clipboard.matrix[i]);
+    	if(aux->next == NULL)
+    	{
+    		aux = aux->next;
+    		continue;
+    	}
+
+    	aux2 = aux->next;
+
+    	close(aux->sock_fd);
+
+    	free(aux);
+
+    	aux = aux2;
     }
 
     for(i = 0; i < 10; i++)
     {
+    	printf("FINAL: Conteudo da região %d é %s\n", i, (char *) clipboard.matrix[i]);
+
         if(clipboard.matrix[i]!=NULL)
             free(clipboard.matrix[i]);
 
@@ -67,19 +85,21 @@ void ctrl_c_callback_handler(int signum)
 
     pthread_mutex_destroy(&mutex_child);
     pthread_mutex_destroy(&mux);
+    */
 
     unlink(SOCK_ADDRESS);
 
-    exit(0);
+    exit(EXIT_SUCCESS);
 }
 
 int system_error(void *node)
 {
 
-    if(node==NULL)
+    if(node == NULL)
     {
         return -1;
     }
+
     return 0;
 }
 
@@ -106,26 +126,29 @@ void initialize_clipboard()
 
     // If a clipboard starts in single mode (-1)
     sock_main_server = -1;
+    
     void (*ctrl_c)(int);
+    ctrl_c = signal(SIGINT, ctrl_c_callback_handler);
 
-    ctrl_c=signal(SIGINT, ctrl_c_callback_handler);
     void (*close_socket)(int);
-    if((close_socket=signal(SIGPIPE,SIG_IGN))==SIG_ERR)
-    {
-        perror("Could not handle SIGPIPE or CTRL_Chandle");
-        exit(0);
-    }
+    close_socket = signal(SIGPIPE, SIG_IGN);
 
-    //Initialize mutex!
-    if(pthread_mutex_init(&mux, NULL) != 0 ||pthread_mutex_init(&mutex_child,NULL))
+    if(ctrl_c == SIG_ERR || close_socket == SIG_ERR)
     {
-        perror("Mutex_init:");
+        printf("Could not handle SIGINT or SIGPIPE");
         exit(EXIT_FAILURE);
     }
 
     if (pipe(pipefd) == -1)
     {
-        perror("Pipe:");
+        perror("Pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    //Initialize mutex!
+    if(pthread_mutex_init(&mux, NULL) != 0 || pthread_mutex_init(&mutex_child,NULL) != 0)
+    {
+        perror("Mutex_init");
         exit(EXIT_FAILURE);
     }
 
@@ -139,17 +162,18 @@ void initialize_clipboard()
 
         if(pthread_mutex_init(&mutex_wait[i], NULL) != 0)
         {
-            perror("Mutex_init:");
+            perror("Mutex_init");
             exit(EXIT_FAILURE);
         }
 
         if(pthread_rwlock_init(&rwlock[i], NULL) != 0)
         {
-            perror("rwlock_init:");
+            perror("rwlock_init");
             exit(EXIT_FAILURE);
         }
     }
 }
+
 
 /**********************************************************************
 
@@ -330,7 +354,7 @@ int send_top(_message message, int user_fd)
         pthread_mutex_unlock(&mux);
 
     }
-        // If who receives is dad, he has to send the information across pipe
+    // If who receives is dad, he has to send the information across pipe
     else
     {
         pthread_mutex_lock(&mux);
@@ -348,47 +372,6 @@ int send_top(_message message, int user_fd)
     }
 
     return 0;
-}
-
-/**********************************************************************
-
-copy_to_clipboard()
-
-Arguments: message_aux - message struct
-		   fd - value returned by the unix_connection
-
-Return: (void)
-
-Description: save the information into clipboard
-
-
-
-**********************************************************************/
-int copy_to_clipboard(int fd, _message message_aux)
-{
-    void* buffer=NULL;
-    int erc;
-    buffer= malloc(message_aux.length);
-    if((erc=read(fd, buffer, message_aux.length))!=message_aux.length)
-    {
-        printf("merdaaa \n");
-        return 0;
-    }
-    pthread_rwlock_wrlock(&rwlock[message_aux.region]);
-
-    if(clipboard.matrix[message_aux.region] != NULL)
-        free(clipboard.matrix[message_aux.region]);
-
-    clipboard.size[message_aux.region]=message_aux.length;
-    printf("recebi o buffer do pipe ou do outro : %s \n", (char *)buffer);
-
-    clipboard.matrix[message_aux.region] = buffer;
-    printf("o clipboard correspondente é :%s da posicao : %d \n",clipboard.matrix[message_aux.region],message_aux.region);
-
-    pthread_rwlock_unlock(&rwlock[message_aux.region]);
-
-    return erc;
-
 }
 
 /*********************************************************************
@@ -423,14 +406,14 @@ int paste(_message message, int user_fd)
         message.flag=ERROR;
     }
 
-    buf=malloc(message.length*sizeof(char));
+    buf=malloc(message.length);
     if(buf==NULL)
     {
         printf("Error in buf alocation \n");
         return(-1);
     }
 
-    memcpy(buf,clipboard.matrix[message.region],message.length*sizeof(char));
+    memcpy(buf,clipboard.matrix[message.region],message.length);
     pthread_rwlock_unlock(&rwlock[message.region]);
 
     if(write(user_fd, &message, sizeof(_message)) != sizeof(_message))
@@ -475,22 +458,11 @@ Description:
 
 int wait(_message message, int user_fd)
 {
-    waiting_list[message.region] = waiting_list[message.region] + 1;
-
     pthread_mutex_lock(&mutex_wait[message.region]);
-    while(flag_wait[message.region] != 1)
-    {
-        pthread_cond_wait(&data_cond[message.region], &mutex_wait[message.region]);
-    }
+
+    pthread_cond_wait(&data_cond[message.region], &mutex_wait[message.region]);
 
     pthread_mutex_unlock(&mutex_wait[message.region]);
-
-
-    waiting_list[message.region] = waiting_list[message.region] - 1;
-
-    //nao tenho a certeza disto lol
-    if(waiting_list[message.region]==0)
-        flag_wait[message.region] = 0;
 
     if(paste(message, user_fd) == -1)
     {
@@ -498,14 +470,8 @@ int wait(_message message, int user_fd)
         return (-1);
     }
 
-
-
     return 0;
 }
-
-
-
-
 
 _clipboards_list * create_new_son (_clipboards_list * clipboards_list, int sock_fd_aux){
 
@@ -542,8 +508,43 @@ _clipboards_list * delete_son(_clipboards_list *clipboards_list, int socket_fd_s
     current->next=aux->next;
     free(aux);
     return clipboards_list;
-
-
-
 }
 
+/**********************************************************************
+
+copy_to_clipboard()
+
+Arguments: message_aux - message struct
+		   fd - value returned by the unix_connection
+
+Return: (void)
+
+Description: save the information into clipboard
+
+**********************************************************************/
+
+int copy_to_clipboard(int fd, _message message_aux)
+{
+    void * buffer=NULL;
+    int erc;
+    buffer= malloc(message_aux.length);
+    if((erc=read(fd, buffer, message_aux.length))!=message_aux.length)
+    {
+        printf("merdaaa \n");
+        return 0;
+    }
+    pthread_rwlock_wrlock(&rwlock[message_aux.region]);
+
+    if(clipboard.matrix[message_aux.region] != NULL)
+        free(clipboard.matrix[message_aux.region]);
+
+    clipboard.size[message_aux.region]=message_aux.length;
+    printf("recebi o buffer do pipe ou do outro : %s \n", (char *)buffer);
+
+    clipboard.matrix[message_aux.region] = buffer;
+    printf("o clipboard correspondente é :%s da posicao : %d \n", (char *) clipboard.matrix[message_aux.region], message_aux.region);
+
+    pthread_rwlock_unlock(&rwlock[message_aux.region]);
+
+    return erc;
+}

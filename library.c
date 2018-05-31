@@ -98,7 +98,7 @@ int clipboard_copy(int clipboard_id, int region, void *buf, size_t count)
 	_message message;
 	int send_bytes, err_rcv, flag_check = ERROR;
 
-	if(region < 0 || region >= MAX_REGIONS || clipboard_id < 0 || count==0||buf==NULL)
+	if(region < 0 || region >= MAX_REGIONS || clipboard_id < 0 || count == 0 || buf == NULL)
 	{
 		printf("Error - Invalid Information (Region or clipboard_id)\n");
 		return 0;

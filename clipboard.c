@@ -47,8 +47,8 @@ Description:
 
 **********************************************************************/
 
-int main(int argc, char *argv[]){
-
+int main(int argc, char *argv[])
+{
 	pthread_t thread_id[3];
 	socklen_t size_addr;
 	char adress[100];
@@ -61,9 +61,8 @@ int main(int argc, char *argv[]){
 		exit(EXIT_FAILURE);
 	}
 
-
 	// If the clipboard run in connected mode
-	if (argc==4)
+	if (argc == 4)
 	{
 		strcpy(adress,argv[2]);
 		sock_main_server = inet_connection_client(adress , atoi(argv[3]));

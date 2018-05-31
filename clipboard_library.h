@@ -34,7 +34,7 @@ typedef struct _message_struct  {
 typedef struct clipboard_struct
 {
 	size_t size[MAX_REGIONS];
-	char *matrix[MAX_REGIONS];
+	void * matrix[MAX_REGIONS];
 } _clipboard;
 
 /*
