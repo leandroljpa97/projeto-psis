@@ -53,13 +53,14 @@ int main(int argc, char *argv[])
 	socklen_t size_addr;
 	char adress[100];
 
-	initialize_clipboard();
 
-	if(argc != 1 && argc != 4 && (strcmp(argv[1], "-c") != 0))
+	if((argc != 1 && argc != 4) || (argc == 4 && (strcmp(argv[1], "-c") != 0)))
 	{
 		printf("invalid input parameters\n");
 		exit(EXIT_FAILURE);
 	}
+
+	initialize_clipboard();
 
 	// If the clipboard run in connected mode
 	if (argc == 4)
@@ -67,14 +68,24 @@ int main(int argc, char *argv[])
 		strcpy(adress,argv[2]);
 		sock_main_server = inet_connection_client(adress , atoi(argv[3]));
 
-        pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &sock_main_server);
-    }
+        if(pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &sock_main_server)!=0)
+			error_confirmation("Error creating thread receiveUp_sendDown:");
+		if(pthread_detach(thread_id[0])!=0)
+			error_confirmation("Error in pthread_detach- receiveUP_sendDown:");
+	}
     else
     {
-        pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &pipefd[READ]);
+        if(pthread_create(&thread_id[0], NULL, receiveUP_sendDOWN, &pipefd[READ])!=0)
+        	error_confirmation("Error creating thread receiveUp_sendDown:");
+        if(pthread_detach(thread_id[0])!=0)
+        	error_confirmation("Error in pthread_detach- receiveUP_sendDown:");
     }
 
-	pthread_create(&thread_id[1], NULL, accept_remote_connections, 0);
+	if(pthread_create(&thread_id[1], NULL, accept_remote_connections, 0)!=0)
+		error_confirmation("Error creating thread accept_remote_connections:");
+
+	if(pthread_detach(thread_id[1])!=0)
+		error_confirmation("Error in pthread_detach- accept_remote_connections:");
 
 	int CLIPBOARD_SOCKET = unix_connection();
 
@@ -83,11 +94,13 @@ int main(int argc, char *argv[])
 		size_addr = sizeof(struct sockaddr);
 
 		int user_fd = accept(CLIPBOARD_SOCKET, (struct sockaddr *) &user_addr, &size_addr);
-		if(user_fd == -1) {
-			perror("Accept:");
-			exit(-1);
-		}
+		if(user_fd == -1)
+			error_confirmation("Error in Accept new client:");
 
-		pthread_create(&thread_id[2], NULL, new_thread_clipboard, &user_fd);
+		if(pthread_create(&thread_id[2], NULL, user_communication, &user_fd)!=0)
+			error_confirmation("Error creating thread user_communication:");
+		if(pthread_detach(thread_id[2])!=0)
+			error_confirmation("Error in pthread_detach- receiveUP_sendDown:");
+
 	}	
 }

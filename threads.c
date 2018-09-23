@@ -44,19 +44,16 @@ _clipboards_list * clipboards_list;
 
 int sock_main_server;
 
-pthread_mutex_t mux;
+pthread_mutex_t mux_sendUP;
 pthread_rwlock_t rwlock[MAX_REGIONS];
 pthread_mutex_t mutex_child;
-int flag_wait[MAX_REGIONS];
-int waiting_list[MAX_REGIONS];
 pthread_mutex_t mutex_wait[MAX_REGIONS];
 pthread_cond_t data_cond[MAX_REGIONS] = PTHREAD_COND_INITIALIZER;
 
 
 /**********************************************************************
 
-new_thread_clipboard()
-
+user_communication
 Arguments: user_fd - value returned by the unix_connection
 
 Return: (void *)
@@ -68,40 +65,46 @@ Description:
 
 **********************************************************************/
 
-void * new_thread_clipboard(void * _user_fd)
+void * user_communication(void * _user_fd)
 {
 	int user_fd = *((int*)_user_fd);
 	_message message;
 
 	while(recv(user_fd, &message, sizeof(_message), 0) > 0)
 	{
+	    if(!verification_library(message))
+            break;
+
+
 		if(message.action == COPY)
 		{
-			printf("Vou fazer copy!!!!\n");
 			if(send_top(message, user_fd) == -1)
 			{
-				perror("Error in copy\n");
+				printf("Error in copy- communication with app\n");
+                break;
 			}
 		}
 		else if(message.action == PASTE)
 		{
-			printf("Vou fazer paste!!!!\n");
 			if(paste(message, user_fd) == -1)
 			{
-				perror("Error in paste\n");
+				printf("Error in paste- communication with app\n");
+                break;
 			}
 		}
 		else if(message.action == WAIT)
 		{
-			printf("Vou fazer wait!!!!\n");
 			if(wait(message, user_fd) == -1)
 			{
-				perror("Error in wait\n");
+				printf("Error in wait- comunication with app\n");
+                break;
 			}
 		}
+		else break;
 	}
 
-	return 0;
+    clipboard_close(user_fd);
+    return NULL;
 }
 
 /**********************************************************************
@@ -126,12 +129,10 @@ void * accept_remote_connections()
     pthread_t thread_id;
 
 	int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sock_fd == -1){
-    	perror("socket: ");
-    	exit(-1);
-  	}
+	if (sock_fd == -1)
+        error_confirmation("Error in socket_inet:");
 
-	server_addr.sin_family = AF_INET;
+    server_addr.sin_family = AF_INET;
   	server_addr.sin_addr.s_addr= INADDR_ANY;
 
   	generate_random_port_and_bind(sock_fd);
@@ -143,14 +144,30 @@ void * accept_remote_connections()
     	size_addr = sizeof(struct sockaddr);
 
 		int sock_fd_aux = accept(sock_fd, (struct sockaddr *) &client_addr, &size_addr);
-		if(sock_fd_aux == -1) {
-			perror("Accept:");
-			exit(EXIT_FAILURE);
-		}
+		if(sock_fd_aux == -1)
+            error_confirmation("Error in Accept:");
+
 
         pthread_create(&thread_id, NULL, receiveDOWN_sendUP, &sock_fd_aux);
+        pthread_detach(thread_id);
+
     }
+    return NULL;
 }
+
+/**********************************************************************
+
+receiveDown_sendUP()
+
+Arguments: _socket_fd_son
+
+Return: (void *)
+
+
+Description:
+	This thread is always ready to read from one son and send the information to the parent
+    there are one thread "receiveDOWN_send_UP per son
+**********************************************************************/
 
 void * receiveDOWN_sendUP(void * _socket_fd_son)
 {
@@ -158,103 +175,131 @@ void * receiveDOWN_sendUP(void * _socket_fd_son)
     _message message;
     void * buffer_aux=NULL;
     int j;
-    //---------------initialize my son------------------------
-	//nao preciso de meter aqui agora um readlock????
 
-    pthread_mutex_lock(&mutex_child);
+    // Initialize my son
+    if(pthread_mutex_lock(&mutex_child)!=0)
+        error_confirmation("Error in lock mutex child in function receiveDown_sendUp");
 
-    clipboards_list = create_new_son (clipboards_list, socket_fd_son);
-
-    for(j=0; j<10; j++)
+    if((clipboards_list = create_new_son (clipboards_list, socket_fd_son)) == NULL)
     {
-        //sleep(2);
-        printf("região %d \n",j);
-        message.length=clipboard.size[j];
-        printf("A região %d tem size de %lu \n", j, clipboard.size[j]);
-        message.region=j;
-        printf("CHEGUEI AQUI!!\n");
+        if(pthread_mutex_unlock(&mutex_child)!=0)
+            error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
 
-       // write(socket_fd_son, &message, sizeof(_message));
-        //aqui nao pode entretanto mudar????
+        clipboard_close(socket_fd_son);
+        return NULL;
+    }
+
+    //send all my content to my son
+    for(j = 0; j < MAX_REGIONS; j++)
+    {
+        message.length = clipboard.size[j];
+        message.region = j;
+
         if(message.length != 0)
         {
-        	printf("SOU O PAI E MANDEI ATUALIZAÃO PARA O FILHO\n");
+            if(paste(message, socket_fd_son) == -1)
+            {
+                clipboards_list = delete_son(clipboards_list, socket_fd_son);
+                if(pthread_mutex_unlock(&mutex_child)!=0)
+                    error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
 
-            printf("o message.length abtes é %lu!!!!!\n", message.length);
-
-            //read(socket_fd_son, &message, sizeof(_message));
-            printf("o message.length depois é %lu!!!!!\n", message.length);
-
-            paste(message, socket_fd_son);
+                return NULL;
+            }
        	}
     }
 
-    pthread_mutex_unlock(&mutex_child);
+    if(pthread_mutex_unlock(&mutex_child)!=0)
+        error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
 
-    printf("O sock_fd_son é %d\n", socket_fd_son);
- 
+
     //-----------------------------------------------------------
     //i'll receive information from my son, and when it happens i'll send to my dad
     while((read(socket_fd_son, &message, sizeof(_message)))>0)
     {
-        printf("mal ini: message.region= %d , message.length=%lu \n",message.region,message.length);
-        if(buffer_aux!=NULL)
+        buffer_aux = malloc(message.length);
+        if(buffer_aux == NULL)
+            error_confirmation("Alocation error:");
+
+        if(read(socket_fd_son, buffer_aux, message.length) != message.length)
         {
             free(buffer_aux);
+            break;
         }
-        buffer_aux= malloc(message.length);
-        if(buffer_aux==NULL)
+
+        if(sock_main_server != SINGLE_MODE)
         {
-            printf("mal inicializado \n");
-            exit(-1);
-        }
-        read(socket_fd_son, buffer_aux,message.length);
-        if(sock_main_server!=-1)
-        {
-            pthread_mutex_lock(&mux);
-            write(sock_main_server,&message,sizeof(_message));
-            write(sock_main_server,buffer_aux,message.length);
-            pthread_mutex_unlock(&mux);
+            if(pthread_mutex_lock(&mux_sendUP)!=0)
+                error_confirmation("Error in lock mutex_sendUP in function receiveDown_sendUp");
+
+            if(write(sock_main_server, &message, sizeof(_message)) != sizeof(_message))
+            {
+                if(pthread_mutex_unlock(&mux_sendUP)!=0)
+                    error_confirmation("Error in unlock mutex_sendUP in function receiveDown_sendUp");
+
+                free(buffer_aux);
+                continue;
+            }
+            if(write(sock_main_server, buffer_aux, message.length) != message.length)
+            {
+                if(pthread_mutex_unlock(&mux_sendUP)!=0)
+                    error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
+
+                free(buffer_aux);
+                continue;
+            }
+            if(pthread_mutex_unlock(&mux_sendUP)!=0)
+                error_confirmation("Error in unlock mutex_sendUP in function receiveDown_sendUp");
+
 
         }
             //if who receives is dad, he has to send the information across pipe
         else
         {
-            pthread_mutex_lock(&mux);
-            write(pipefd[WRITE],&message,sizeof(_message));
-            write(pipefd[WRITE],buffer_aux,message.length);
-            pthread_mutex_unlock(&mux);
+            if(pthread_mutex_lock(&mux_sendUP)!=0)
+                error_confirmation("Error in lock mutex_sendUP in function receiveDown_sendUp");
+
+            if(write(pipefd[WRITE], &message, sizeof(_message)) != sizeof(_message))
+            {
+                free(buffer_aux);
+                error_confirmation("Error in Pipe:");
+            }
+            if(write(pipefd[WRITE], buffer_aux, message.length) != message.length)
+            {
+                free(buffer_aux);
+                error_confirmation("Error in Pipe:");
+            }
+            if(pthread_mutex_unlock(&mux_sendUP)!=0)
+                error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
 
         }
-    }
 
-    _clipboards_list * aux1= clipboards_list;
-    while(aux1 !=NULL)
-    {
-        printf("xau--fd: %d \n",aux1->sock_fd);
-
-        aux1=aux1->next;
+        free(buffer_aux);
     }
 
 
-    clipboards_list=delete_son(clipboards_list, socket_fd_son);
+    if(pthread_mutex_lock(&mutex_child)!=0)
+        error_confirmation("Error in lock mutex child in function receiveDown_sendUp");
 
-_clipboards_list * aux = clipboards_list;
-while(aux !=NULL)
-{
-    printf("oii fd: %d \n", aux->sock_fd);
+    clipboards_list = delete_son(clipboards_list, socket_fd_son);
+    if(pthread_mutex_unlock(&mutex_child)!=0)
+        error_confirmation("Error in unlock mutex child in function receiveDown_sendUp");
 
-    aux=aux->next;
+    return NULL;
 }
 
+/**********************************************************************
 
-		return 0;
+receiveUP_sendDown()
+
+Arguments: _socket_fd_son
+
+Return: (void *)
 
 
-}
-
-
-
+Description:
+	This thread is always read the information from the parent and send to all sons
+    there are one thread "receiveDOWN_send_UP per son
+**********************************************************************/
 
 void * receiveUP_sendDOWN(void * _fd)
 {
@@ -262,53 +307,57 @@ void * receiveUP_sendDOWN(void * _fd)
     _message message_aux;
     _clipboards_list * aux;
 
-
     while(read(fd, &message_aux, sizeof(_message)) > 0)
     {
-        printf("recebi do pipe ou do socket normal \n");
-        //MAIS UMA VEZ ISTO É A FUNCAO DE COPY - A NOSSA 'NOVA ' FUNCAO (QUE NAO EXISTE)
-        //isto é que é o 'novo' copy- criar uma funcao para isto maybe! quando o pai escreve po filho
-        if(message_aux.length==0)
-        {
+        //when the length is zero, don't read the content to alocate
+        if(message_aux.length == 0)
             continue;
-        }
 
-        //nao sei o que é suposto retornar ou nao pah...
-        //se ele vier aqui é pq houve merda a copiar no read!! sinal que nao leu o read no copy
-        if(!copy_to_clipboard(fd, message_aux))
+        if(copy_to_clipboard(fd, message_aux) == -1)
         	break;
-            //return 0;
 
-		pthread_mutex_lock(&mutex_wait[message_aux.region]);
+		if(pthread_mutex_lock(&mutex_wait[message_aux.region])!=0)
+		    error_confirmation("Error mutex_wait: function receiveUP_sendDown");
 
-		pthread_cond_broadcast(&data_cond[message_aux.region]);
+		if(pthread_cond_broadcast(&data_cond[message_aux.region])!=0)
+            error_confirmation("Error in broadcast in function receiveUp_sendDown");
 
-		printf("eu vou bazaar do mutex 1 \n");
-		pthread_mutex_unlock(&mutex_wait[message_aux.region]);
-		printf("eu vou bazar do mutex 2 \n");
+        if(pthread_mutex_unlock(&mutex_wait[message_aux.region])!=0)
+            error_confirmation("Error in unlock mutex wait in function receiveUp_sendDown");
 
-		aux = clipboards_list;
 
-		pthread_mutex_lock(&mutex_child);
+		if(pthread_mutex_lock(&mutex_child)!=0)
+            error_confirmation("Error in lock mutex child in function receiveUp_sendDown");
+
+        aux = clipboards_list;
+
+        //send all information to all sons
         while(aux != NULL)
         {
-            printf("tou a mandar o copy para os meus filhos \n");
-            write(aux->sock_fd, &message_aux, sizeof(_message));
-            write(aux->sock_fd, clipboard.matrix[message_aux.region], message_aux.length);
+            if(write(aux->sock_fd, &message_aux, sizeof(_message))!=sizeof(_message))
+            {
+                delete_son(clipboards_list,aux->sock_fd);
+                error_confirmation("error communication between clipboards on function receiveUp_sendDown");
+            }
+            if(write(aux->sock_fd, clipboard.matrix[message_aux.region], message_aux.length)!=message_aux.length)
+            {
+                delete_son(clipboards_list,aux->sock_fd);
+                error_confirmation("error communication between clipboards on function receiveUp_sendDown");
+            }
+
             aux = aux->next;
         }
-        pthread_mutex_unlock(&mutex_child);
+        if(pthread_mutex_unlock(&mutex_child)!=0)
+            error_confirmation("Error in unlock mutex child in function receiveUp_sendDown");
 
-        for(int i = 0; i < 10; i++)
-		{
-			printf("Conteudo da região %d é %s\n", i, (char *) clipboard.matrix[i]);
-		}
+
     }
 
-    //only arrives here when dad dies
 
-    sock_main_server = -1;
+    //only arrives here when dad dies and in this case this is clipboard work in singleMode
+    close(sock_main_server);
+    sock_main_server = SINGLE_MODE;
     receiveUP_sendDOWN(pipefd);
 
-   	return 0;
+    return NULL;
 }
